@@ -4,6 +4,25 @@
   
     
     <entry>
+      <title>leetcode</title>
+      <link href="/2024/04/13/leetcode/"/>
+      <url>/2024/04/13/leetcode/</url>
+      
+        <content type="html"><![CDATA[<h3 id="1-移除数组的重复元素"><a href="#1-移除数组的重复元素" class="headerlink" title="1.移除数组的重复元素"></a>1.移除数组的重复元素</h3><p>首先处理特殊情况：如果数组长度为0，直接返回；<br>因此从下标1开始处理数组，由于给定的数组 nums 是有序的，对于i &lt;&#x3D; k &lt;&#x3D; j ，有nums[i]&#x3D;nums[k]&#x3D;nums[j]<br>设置快慢指针slow ,fast, 均从1开始，nums[0~slow-1]是不重复的被保留数组元素<br>若nums[fast] !&#x3D; nums[slow - 1]，则说明当前元素与被保留数组的元素都不一样，可以纳入被保留数组直接让nums[slow] &#x3D; nums[fast]</p><h3 id="2-移除数组的重复元素2"><a href="#2-移除数组的重复元素2" class="headerlink" title="2.移除数组的重复元素2"></a>2.移除数组的重复元素2</h3><p>处理特殊情况：如果数组长度&lt; 2，直接返回；<br>从下标2开始处理数组，快慢指针slow,fast均为2,nums[0~slow-1]是能够被保留的数组元素<br>若nums[fast] !&#x3D; nums[slow - 2]，也就是说如果当前元素与被保留的元素中倒数第二个元素不一样，那么说明该元素与被保留数组的最后两位元素都不一样，可以纳入被保留数组，即让nums[slow] &#x3D; nums[right]，slow++ </p><h3 id="3-多数元素"><a href="#3-多数元素" class="headerlink" title="3.多数元素"></a>3.多数元素</h3><p>给定一个大小为 n 的数组 nums ，返回其中的多数元素。多数元素是指在数组中出现次数 大于 ⌊ n&#x2F;2 ⌋ 的元素。<br>以O(N)的时间复杂度，O(1)的空间复杂度解决。<br>这是我目前看到的最直观形象的解法，时间复杂度O(n)，空间复杂度O(1)。<br>“同归于尽消杀法” ：<br>由于多数超过50%, 比如100个数，那么多数至少51个，剩下少数是49个。</p><ol><li>第一个到来的士兵，直接插上自己阵营的旗帜占领这块高地，此时领主 winner 就是这个阵营的人，现存兵力 count &#x3D; 1。</li><li>如果新来的士兵和前一个士兵是同一阵营，则集合起来占领高地，领主不变，winner 依然是当前这个士兵所属阵营，现存兵力 count++；</li><li>如果新来到的士兵不是同一阵营，则前方阵营派一个士兵和它同归于尽。 此时前方阵营兵力count –。（即使双方都死光，这块高地的旗帜 winner 依然不变，因为已经没有活着的士兵可以去换上自己的新旗帜）</li><li>当下一个士兵到来，发现前方阵营已经没有兵力，新士兵就成了领主，winner 变成这个士兵所属阵营的旗帜，现存兵力 count ++。<br>就这样各路军阀一直以这种以一敌一同归于尽的方式厮杀下去，直到少数阵营都死光，那么最后剩下的几个必然属于多数阵营，winner 就是多数阵营。（多数阵营 51个，少数阵营只有49个，死剩下的2个就是多数阵营的人）</li></ol>]]></content>
+      
+      
+      
+        <tags>
+            
+            <tag> 力扣专题 </tag>
+            
+        </tags>
+      
+    </entry>
+    
+    
+    
+    <entry>
       <title>这是smog1995的个人博客</title>
       <link href="/2024/04/08/hello-world/"/>
       <url>/2024/04/08/hello-world/</url>
@@ -11,16 +30,10 @@
         <content type="html"><![CDATA[<p>Welcome to <a href="https://hexo.io/">Hexo</a>! This is your very first post. Check <a href="https://hexo.io/docs/">documentation</a> for more info. If you get any problems when using Hexo, you can find the answer in <a href="https://hexo.io/docs/troubleshooting.html">troubleshooting</a> or you can ask me on <a href="https://github.com/hexojs/hexo/issues">GitHub</a>.</p><h2 id="Quick-Start"><a href="#Quick-Start" class="headerlink" title="Quick Start"></a>Quick Start</h2><h3 id="Create-a-new-post"><a href="#Create-a-new-post" class="headerlink" title="Create a new post"></a>Create a new post</h3><figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">$ hexo new <span class="string">&quot;My New Post&quot;</span></span><br></pre></td></tr></table></figure><p>More info: <a href="https://hexo.io/docs/writing.html">Writing</a></p><h3 id="Run-server"><a href="#Run-server" class="headerlink" title="Run server"></a>Run server</h3><figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">$ hexo server</span><br></pre></td></tr></table></figure><p>More info: <a href="https://hexo.io/docs/server.html">Server</a></p><h3 id="Generate-static-files"><a href="#Generate-static-files" class="headerlink" title="Generate static files"></a>Generate static files</h3><figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">$ hexo generate</span><br></pre></td></tr></table></figure><p>More info: <a href="https://hexo.io/docs/generating.html">Generating</a></p><h3 id="Deploy-to-remote-sites"><a href="#Deploy-to-remote-sites" class="headerlink" title="Deploy to remote sites"></a>Deploy to remote sites</h3><figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">$ hexo deploy</span><br></pre></td></tr></table></figure><p>More info: <a href="https://hexo.io/docs/one-command-deployment.html">Deployment</a></p>]]></content>
       
       
-      <categories>
-          
-          <category> 个人介绍 </category>
-          
-      </categories>
-      
       
         <tags>
             
-            <tag> 标签试验 </tag>
+            <tag> 个人介绍 </tag>
             
         </tags>
       
