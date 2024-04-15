@@ -4,6 +4,44 @@
   
     
     <entry>
+      <title>huadb_lab3</title>
+      <link href="/2024/04/15/huadb-lab3/"/>
+      <url>/2024/04/15/huadb-lab3/</url>
+      
+        <content type="html"><![CDATA[<p>万圣节问题的底层逻辑是，update操作<br>Update  id &#x3D; id+1<br>会新增插入数据，然后scan操作又把新插入的数据视作原来表中的数据，重复删除新增的数据再插入数据如此反复导致死循环。<br>update操作需要使用扫描表中符合条件的行，可以发现update执行器有子执行器，其实就是scan执行器，所以这两个操作的事务id和sql语句是相同的。只需在scan环节对元组做判断是否为相同的事务id和sql语句cid，相同则不送出该元组（火山模型，一次只返回一行）</p><p>实现mvcc，使用事务版本号（某种意义上是逻辑时间戳）。每个事务都有一个唯一的事务ID，被称为XID。注意：除了被BEGIN - COMMIT&#x2F;ROLLBACK包裹的一组语句会被当作一个事务对待外，不显示指定BEGIN - COMMIT&#x2F;ROLLBACK的单条语句也是一个事务。</p><p>本实验框架和pgsql的mvcc相似，其实现原理如下：</p><p>1）数据文件中存放同一逻辑行的多个行版本；<br>2）每个行版本的头部记录创建该版本的事务ID以及删除该行版本的事务的ID（分别称为xmin和xmax）；<br>3）系统保存了每个事务的状态（运行中，中止或提交）<br>4）根据上面的数据并运用一定的规则每个事务只会看到一个特定的行版本。<br>通过MVCC，读写事务可以分别在不同的行版本上工作，因此能够在互不冲突的情况下并发执行。</p><p>我们需要先介绍下隔离级别：<br><img src="https://img2.imgtp.com/2024/04/15/FEBXEUfj.png" alt="Alt text"><br>本实验要求实现读已提交，可重复读和可串行化。<br>在一般情况中，隔离级别能解决的问题如下表。<br>读脏（Dirty Read)会导致读取到未提交的数据，不可重复读会导致同个事务对同一行数据第二次读取得到的结果不一样（第二次查询时读到了其他事务新提交的数据），幻读（Phantom）会导致同个事务对同一个表第二次读取得到的行数不一样（如多了一行，少了一行）。<br>然后是mvcc中，快照读可见性判断的例子（前四个测试案例文件只需实现快照读）：<br>假设当前正执行的事务版本号为xid，要判断一个元组是否可见：<br>1.插入该元组的事务（也就是版本号为xmin）已经提交了的情况下，那么在xmin事务之后开始的新事务就都能够看到该元组，即xid&gt;&#x3D;xmin的事务均能看到该行（xid&#x3D;xmin则是一个事务未结束时再次scan表，能读取到之前插入的元组）；同理，xmax事务已提交的情况下，xid&gt;&#x3D;xmax的事务就读不到该行数据了。但若xmin未提交，那么即使xid&gt;&#x3D;xmin，事务xid也不能看见该行，xmax同理；<br>2.xmin或xmax&gt;xid，说明事务xmin(xmax)比当前事务晚创建，在可重复读隔离级别的事务中是不能看见的；但是如果是在隔离级别为读已提交的事务中，若对应该元组的插入或删除操作已经提交（xmin或xmax事务已提交），那么当前事务在第二遍scan表时则能读取到该元组的变化（提交插入，则第二遍扫描表时能看到该元组；提交删除，则该元组第二遍时不会被读取到）。<br>本实验中，快照读中，元组对一个事务是否可见的完整判断逻辑，如下图：</p><p><img src="https://img2.imgtp.com/2024/04/15/Ma807obu.png" alt="tup"><br>mvcc需要借助活跃事务集来判断一个元组的修改是否已提交。可重复读和读已提交获取的活跃事务集方法是不一样的。隔离级别为可重复读的事务因为看不到后续创建的新事务，所以它的活跃事务集应该是一个快照，包含在该事务创建时的所有活跃事务的集合，而隔离级别为读已提交的事务看到的活跃事务集则会随着新事务的开始和提交而更新。<br>快照读可以直接在tablescan中实现，但是若需要当前读，还需要在其他执行器中添加处理逻辑，同时对快照读实现中元组可见判断的一部分逻辑迁移到seqscan执行器中执行。</p><p>实现MV2PL<br>在mvcc中引入两阶段锁（two-phase-lock)。两阶段锁中，有粒度锁的概念，粒度有行级和表级。同时，有五种锁，分别为共享锁（Share)、排他锁(Exclusive)、意向共享锁（Intention Share Lock)、意向排他锁（Intention Exclusive Lock)、共享意向排他锁<br><img src="https://img2.imgtp.com/2024/04/15/kHmqShVq.png" alt="t"><br>意向锁是表级锁，只能对表上锁，意向共享锁代表的是要对该表的某些行进行读操作；意向排他锁代表要对该表的某些行进行写操作；共享锁和排他锁，两者均能对表和行上锁。<br>两阶段锁的实现<br>然后介绍下不同sql语句对应不同的加锁情况。<br>首先需要根据sql语句是否需要更新数据来判断。普通select语句，seqscan执行器只会对表加IS锁；<br>修改语句：<br>update：嵌套在update中的子seqscan执行器，其Ismodifedsql（）为true，即数据更新语句，需要加IX锁；<br>insert的子执行器不为seqscan执行器，所以直接在本执行器中对表上IX锁即可；<br>delete的子执行器同update一样，故在seqscan执行器中上IX锁；<br>本实验测试案例中的SIX锁：先对表设为share mode，也就是上S锁，再执行Insert操作加上IX锁，就变成了SIX锁。<br>当前读 Select for update 和 share的上锁：update是对行加写锁，share则是对行加读锁。<br>当前读不再是严格的snapshot Isolation，因为返回的是最新的数据<br><img src="https://img2.imgtp.com/2024/04/15/9mpnaEoV.png" alt="t"><br>锁维护使用的数据结构</p><p>维护每个表的锁请求队列，只要该锁请求的锁类型能兼容该队列中的任何锁请求的锁类型，则将该锁请求加入队列，如果该锁请求的锁类型不能兼容该队列中的任何一个，则返回false<br>锁升级的实现思路是，首先找到该事务xid想要上锁的表的锁请求队列，遍历一遍队列锁升级的类型是否与其他事务上的锁类型兼容，若兼容，再判断之前xid上过的锁能否直接升级，不能则再上新锁（锁类型为想要升级的类型）。<br>何为两阶段锁：第一阶段只能上锁不能解锁，第二阶段只能解锁不能上锁。<br>在事务提交后，才会将锁一次性释放，也就是强两阶段锁，保证了可串行化。</p>]]></content>
+      
+      
+      
+    </entry>
+    
+    
+    
+    <entry>
+      <title>huadb_lab2</title>
+      <link href="/2024/04/15/huadb-lab2/"/>
+      <url>/2024/04/15/huadb-lab2/</url>
+      
+        <content type="html"><![CDATA[<p>本实验的redo log和undo log均为物理日志，共用同一份日志文件，也就是redo&#x2F;undo log。undo log采用物理日志来回滚一个事务的实现为：在内存中维护一个活跃事务表，记录每一个活跃事务的最后一条操作的LSN位置，根据这个位置获取日志记录log_record，每个record_log都有该事务的上一条record_log的lsn，直到读取到事务的begin_log_record为止，就可以依次将一个事务的全部操作撤销。<br>在mysql中redo log是物理日志，而undo log是逻辑日志 </p><p>物理日志记录的是页面数据的更改<br>例如在本实验中，一条插入日志的内容如下：<br>事务id，对象id，当前页id，页内的slot id，改动数据所在页内偏移，记录的数据大小，记录的数据内容</p><p>在实验框架中，LSN 使用的是日志记录在日志文件中的位置表示，这种表示方法可以方便地通过 LSN 直接获取日志，无需再单独存一份 LSN 到日志位置的映射表。</p><p>首先说说幂等性：即同个操作无论做了多少遍，结果都是一样的，有f[f(x)] &#x3D; f(x)，为什么需要保证幂等性呢？<br>考虑一个问题：如果某个时间点发生故障，日志持久化了，但是实际操作有部分已经完成，但是有部分还没完成，那么进行故障恢复时扫描redo log重做了已经完成的部分，就会导致一个操作执行了多遍，比如在页内插入多条相同的数据。所以需要幂等性来保证无论重做多少遍，都不影响结果的正确性。<br>redolog为物理日志记录的是数据的变更位置，比如insert 操作实际执行的是把数据写到对应位置，那么只会重新在这个位置上再覆盖写一遍，而delete操作实际上是把对应的记录的删除flag标记为true（本实验的框架中），也只重新设置一遍，均不改变正确性。<br>log_record的redo函数只需使用日志来重新执行一遍操作，而物理日志方法来重做是能够保证幂等性的，因为日志记录了该元组位于页面的偏移量，只需在同个地方再插入一遍，所以如果原位置有数据，也只会进行覆盖。<br>另外，update的实现是由删除旧元组+插入新元组来实现的，所以update的日志即InsertLog和DeleteLog来实现。</p><p>事务的回滚：实验中Log_record包含有当前事务的上一条日志lsn，因此找到事务的最后一条lsn地址，即可遍历该事务的所有lsn。从后往前，对每个操作进行undo，插入操作是对数组做deleted标记为true，删除操作则deleted改为false，比较简单。</p><p>同时，在实验中可以发现物理日志的写入特点，如果有多个事务并发执行时，它们会交叉将日志记录写入缓冲区，不同于逻辑日志，逻辑日志只有在一个事务提交时才将完整记录进行一次写入，即逻辑日志的写入是按事务为单位的。</p><h2 id="ARIES恢复算法"><a href="#ARIES恢复算法" class="headerlink" title="ARIES恢复算法"></a>ARIES恢复算法</h2><p>首先要理解checkpoint，数据库在周期性将当前数据库的快照进行保存，以便数据库发生故障时进行恢复所需重做操作数量大大减少。<br>有两种实现，一种是停机保存，需要暂停服务，保证没有正在运行的事务，同时把所有脏页刷回磁盘。<br>实验采用的第二种，即不停机保存，实现方式是把当前活跃事务表和脏页表保存起来。那么在故障恢复时，与停机保存从checkpoint点开始重做不同，不停机保存需要从min(Rec LSNi)位置开始重做（即比较所有脏页的rec lsn，选出最小的lsn位置）<br><img src="https://img2.imgtp.com/2024/04/15/2QtgrRwj.png" alt="图片" title="结构图"><br>Dpt(Dirty page table):记录了每个脏数据页到第一条日志lsn（即RecLSN)的映射，每次记录日志时，均会判断该日志所改动的数据页是否存在于drity page table中，没有则添加，一旦进行flushpage后，首先把此页范围内的日志写到磁盘，同时会把该页从脏页表中移除。<br>ATT(active Transaction table):记录当前活跃事务到该活跃事务最后一条lsn的映射，用于撤销操作<br>Master Record记录的是begin checkpoint log 的lsn</p><p><img src="https://img2.imgtp.com/2024/04/15/LpQYIJaV.png" alt="图片" title="回滚过程"><br>ARIES 通过记录一条 Checkpoint Begin Log 来明确这个「某一时刻」的位置。<br> 详细步骤如下：</p><ol><li>先记录一条 Checkpoint Begin Log。</li><li>拷贝att和dpt</li><li>记录一条 Checkpoint End Log。Log 内容包括 ATT 和 DPT 的信息。然后把 Log 刷盘。</li><li>把 Checkpoint Begin Log 的 LSN 信息记录到 Master Record 中。</li></ol><p>Recovery 的时候，先从 Master Record 中找到 Checkpoint Begin Log 的位置，然后找到 Checkpoint End Log 的位置，恢复出 ATT 和 DPT 的初始状态<br><img src="https://img2.imgtp.com/2024/04/15/GouUPvl4.png" alt="Alt text" title="检查点"><br>本实验中，开始检查点日志和结束检查点日志连在一块，中间无其他事务日志。在redo中，应从所有脏页中最小的Rec lsn开始进行重做；undo则是需要在活跃事务表中找到事务的最后一条日志，然后依据该日志的prev_lsn找到前一条日志依次撤销操作。完成这些步骤后，数据库即可恢复原状。</p>]]></content>
+      
+      
+      <categories>
+          
+          <category> 数据库lab </category>
+          
+      </categories>
+      
+      
+        <tags>
+            
+            <tag> 数据库lab </tag>
+            
+        </tags>
+      
+    </entry>
+    
+    
+    
+    <entry>
       <title>博客报告</title>
       <link href="/2024/04/15/blog-summry/"/>
       <url>/2024/04/15/blog-summry/</url>
